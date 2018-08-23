@@ -1,0 +1,10 @@
+name = md Doctor
+description = Provides doctor functionality
+core = 7.x
+package = Custom
+
+dependencies[] = gauth
+dependencies[] = geocoder
+dependencies[] = node_export
+dependencies[] = views
+

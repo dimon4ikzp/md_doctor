@@ -1,0 +1,535 @@
+<?php
+
+/**
+ * Implements of hook_form_FORM_ID_alter().
+ * @param $form
+ * @param $form_state
+ */
+function md_doctor_form_doctor_node_form_alter(&$form, &$form_state) {
+  menu_tree_set_path('main-menu', 'node/13');
+  $form['field_agree_to_terms'][LANGUAGE_NONE]['#prefix'] = '<label>' .t('Agree to Terms') . '</label>';
+  $form['field_confirm_physician'][LANGUAGE_NONE]['#prefix'] = '<label>' .t('Confirm you are a Physician'). '</label>';
+  $form['field_information_truthful'][LANGUAGE_NONE]['#prefix'] = '<label>' .t('Information Provided Above is Truthful'). '</label>';
+  $form['actions']['submit']['#value'] = t('SUBMIT');
+  drupal_set_breadcrumb(array());
+
+
+  $fields_4_in_row = array('field_direct_phone', 'field_mobile_phone', 'field_email_publicly_visible', 'field_fax');
+
+  foreach ($fields_4_in_row as $f) {
+    $form[$f]['#attributes']['class'][] = 'col-md-3';
+  }
+  //krumo($form);
+
+  $form['field_fullname']['#attributes']['class'][] = 'col-md-9';
+  $form['field_title']['#attributes']['class'][] = 'col-md-3';
+
+  $form['field_sex']['#attributes']['class'][] = 'col-md-6';
+  $form['field_photo']['#attributes']['class'][] = 'col-md-6';
+
+}
+
+
+/**
+ * Implements hook_field_widget_form_alter()
+ * @param $element
+ * @param $form_state
+ * @param $context
+ */
+function md_doctor_field_widget_form_alter(&$element, &$form_state, $context){
+  if ($context['field']['type'] == 'field_collection') {
+    $element['field_location']['und'][0]['#type'] = 'container';
+  }
+}
+
+/**
+ * Implements hook_preprocess_field_multiple_value_form()
+ * @param $variables
+ */
+function md_doctor_preprocess_field_multiple_value_form(&$variables) {
+  if ($variables['element']['#field_name'] == 'field_locations') {
+    $variables['element']['add_more']['#value'] = t('Add Location');
+  }
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function md_doctor_form_views_exposed_form_alter(&$form, &$form_state, $form_id) {
+  //dsm($form['#id']);
+  if ($form['#id'] == 'views-exposed-form-find-a-doctor-page' || $form['#id'] =='views-exposed-form-find-a-doctor-attachment-1') {
+
+    $form['zip'] = array(
+      '#attributes' => array('placeholder' => 'Enter Postcode'),
+      '#type' => 'textfield',
+      '#size' => 20,
+      '#theme_wrappers' => array(),
+      '#prefix' => '<div class="col-lg-3 col-md-5 col-xs-6 no-padding form-item form-item-zip">',
+      '#suffix' => '</div>',
+      '#weight' => -20
+    );
+    $form['country'] = array(
+      '#options' => array('au' => 'Australia', 'nz' => 'New Zealand'),
+      '#type' => 'select',
+      '#theme_wrappers' => array(),
+      '#prefix' => '<div class="col-lg-3 col-md-5 col-xs-6 no-padding form-item form-item-country">',
+      '#suffix' => '</div>',
+      '#weight' => -19
+    );
+
+    $form['submit']['#value'] = t('Search');
+    $form['submit']['#attributes']['class'] = array('col-lg-2 col-md-2 col-xs-12 no-padding');
+
+    array_unshift($form['#validate'], 'md_doctor_views_exposed_form_validate');
+
+    if (isset($_GET['zip'])) {
+
+      $form['mark']['#markup'] = '<div class="col-md-12">' . t('Specialists Near "@zip"</div>', array('@zip' => $_GET['zip']));
+    }
+  }
+}
+
+/**
+ * @param $form
+ * @param $form_state
+ * @param $email_result
+ * @return array
+ */
+function md_doctor_views_results_email_form($form, $form_state, $email_result) {
+  $form = array();
+  drupal_add_library('system', 'drupal.ajax');
+  $form['#email_result'] = $email_result;
+
+  $form['email'] = array(
+    '#type' => 'textfield',
+    '#required' => TRUE,
+    '#size' => 20,
+    '#attributes' => array('placeholder' => t('Enter Email'))
+    );
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#ajax' => array(
+      'callback' => 'md_doctor_views_results_email_callback'
+      ),
+    '#value' => t('Email Results')
+    );
+  return $form;
+}
+
+/**
+ * @param $form
+ * @param $form_state
+ * @return array
+ */
+function md_doctor_views_results_email_callback($form, $form_state) {
+  $commands = array();
+  $mail = $form_state['values']['email'];
+
+  if (empty($mail)) {
+    return array('#type' => 'ajax', '#commands' => array(ajax_command_alert('Please enter Email')));
+  }
+  if (!valid_email_address($mail)) {
+    return array('#type' => 'ajax', '#commands' => array(ajax_command_alert('Not valid Email')));
+  }
+
+  $email = array(
+    'subject' => 'Search Results - md',
+    'message' => $form['#email_result'],
+    );
+
+  $result = drupal_mail('system', 'mail', $mail, language_default(), array('context' => $email));
+  if ($result) {
+    $message = 'Email has been sent';
+  }else{
+    $message = 'Email has not been sent';
+  }
+  $commands[] = ajax_command_alert($message);
+  return array('#type' => 'ajax', '#commands' => $commands);
+}
+
+/**
+ * Implements hook_views_post_build()
+ * @param $view
+ */
+function md_doctor_views_post_build(&$view) {
+  if ($view->name == 'find_a_doctor' && $view->is_attachment === FALSE) {
+    //krumo($view);
+    menu_tree_set_path('main-menu', 'patients/6-0-find-a-doctor');
+    if (isset($_GET['zip'])) {
+      if (isset($view->empty['area_text_custom'])) {
+        $view->empty['area_text_custom']->options['content'] =
+        '<h4>' . t('Sorry, no specialists were found near "@zip"', array('@zip' => $_GET['zip'])) . '</h4>';
+      }
+
+      if (isset($view->header['area_text_custom'])) {
+        $header =
+        '<h2 class="locations-title">' . t('Specialists Near "@zip"', array('@zip' => $_GET['zip'])) . '</h2>'
+        . '<input type="email" class="js-email" name="email" placeholder="Enter Email"><input type="submit" class="js-submit" value="Email Results">';
+      }
+      //$view->add_item('default', 'header', 'views', 'area', array('content' => $header, 'format' => 'full_html'));
+
+      //$r = drupal_get_form('md_doctor_views_results_email_form');
+
+      //$view->header = render($r);
+    } else {
+      if (isset($view->empty['area_text_custom'])) {
+        $view->empty['area_text_custom']->options['content'] = '';
+      }
+    }
+
+    if (empty($view->exposed_input['zip'])) {
+      $view->attachment_before = NULL;
+      $view->executed = TRUE;
+    }
+  }
+}
+
+/**
+ * Implements hook_views_post_execute().
+ */
+function md_doctor_views_post_execute(&$view) {
+  $view_name = 'find_a_doctor';
+  $view_display = 'page';
+  // Don't show the attachment there is only no items.
+  if ($view->name == $view_name && $view->current_display == $view_display && count($view->result) < 1) {
+    $view->attachment_before = NULL;
+  }
+}
+
+/**
+ * Validate function for views exposed form
+ * @param $form
+ * @param $form_state
+ */
+function md_doctor_views_exposed_form_validate($form, &$form_state) {
+  if (!empty($form_state['values']['zip'])) {
+    if (!(is_numeric($form_state['values']['zip']))) {
+      form_set_error('zip', 'Please enter valid Postcode');
+    }
+    $zip = $form_state['values']['zip'];
+    $country = $form_state['values']['country'];
+    //db_query('TRUNCATE cache_geocoder')->execute();
+    $geo = geocoder('google','', array('biasing' => array('components' => "country:$country|postal_code:$zip")));
+
+    //krumo($geo);
+    if (!empty($geo->coords)) {
+      $form_state['values']['field_geofield_distance']['origin']['lat'] = $geo->coords[1];
+      $form_state['values']['field_geofield_distance']['origin']['lon'] = $geo->coords[0];
+    } else {
+      $form_state['values']['field_geofield_distance']['origin']['lat'] = 0;
+      $form_state['values']['field_geofield_distance']['origin']['lon'] = 0;
+    }
+
+  } else if (isset($_GET['zip'])) {
+    form_set_error('zip', 'Please enter Postcode');
+  }
+}
+
+/**
+ * Implements hook_preprocess_view_view
+ * @param $vars
+ */
+function md_doctor_preprocess_views_view(&$vars) {
+  if ($vars['name'] == 'find_a_doctor' && $vars['display_id'] == 'page') {
+    //krumo($vars);
+    if (!empty($vars['rows'])) {
+      $vars['email_form'] = drupal_get_form('md_doctor_views_results_email_form', $vars['rows']);
+    }
+    if (empty($_GET['zip'])) {
+      $vars['pager'] = NULL;
+    }
+  }
+}
+
+/**
+ * Implements hook_block_view_MODULE_DELTA_alter()
+ * @param $data
+ * @param $block
+ */
+function md_doctor_block_view_block_3_alter(&$data, $block) {
+  if (isset($_GET['zip'])){
+    $data['content'] = FALSE;
+  }
+}
+
+/**
+ * Implements hook_menu()
+ * @return array
+ */
+function md_doctor_menu() {
+    $menu = array(
+        'send-gmail/%node' => array(
+            'title' => 'Send Email',
+            'description' => 'Send Email with Google Account.',
+            'page callback' => 'drupal_get_form',
+            'page arguments' => array('md_doctor_send_gmail_form',1),
+            'access arguments' => array('access content'),
+        ),
+        'node/add/node-export-doctors' => array(
+            'weight' => 10,
+            'title' => 'Export Doctors',
+            'description' => 'Export nodes typeof Doctor.',
+            'page callback' => 'drupal_get_form',
+            'page arguments' => array('md_doctor_export_nodes_form'),
+            'access arguments' => array('export nodes'),
+        ),
+    );
+
+  return $menu;
+}
+
+function md_doctor_export_nodes_form($form, $form_state) {
+    $nids = db_query("SELECT nid FROM {node} WHERE status = '1' AND type = 'doctor'")->fetchCol();
+    $result = node_export($nids, 'xml');
+    $form = array();
+    if ($result['success']) {
+        $code_string = $result['output'];
+
+        $form['nids'] = array(
+            '#type' => 'hidden',
+            '#value' => $nids,
+        );
+        $form['format'] = array(
+            '#type' => 'hidden',
+            '#value' => 'xml',
+        );
+
+        $form['export'] = array(
+            '#title' => t('XML'),
+            '#type' => 'textarea',
+            '#value' => $code_string,
+        );
+        $form['download_file'] = array(
+            '#type' => 'submit',
+            '#value' => t('Download file'),
+            '#submit' => array('md_doctor_export_nodes_form_submit'),
+        );
+
+    } else {
+        //dsm($result);
+        $form['#markup'] = 'Error';
+    }
+
+    return $form;
+
+}
+/**
+ * Export form submit function.
+ *
+ */
+function md_doctor_export_nodes_form_submit($form, &$form_state) {
+    module_load_include('inc', 'node_export', 'node_export.pages');
+    // Get file.
+    $nids = $form_state['values']['nids'];
+    $code_string = $form_state['values']['export'];
+    $format = $form_state['values']['format'];
+    node_export_get_file($nids, $code_string, $format);
+}
+
+
+/**
+ * Send Email with Gmail API
+ * @param $account_id
+ * @param $email_to
+ * @param $email_bcc
+ * @param $email_subject
+ * @param $body
+ */
+function md_doctor_send_gmail($account_id, $email_from, $email_to, $email_bcc, $email_subject, $body) {
+  $account = gauth_account_load($account_id, TRUE);
+
+  if (!empty($account)) {
+    $client = gauth_client_get($account_id);
+    if (!empty($client)) {
+      libraries_load('google-api-php-client');
+
+      $raw_message = '';
+      $raw_message .= "To:" . $email_to . " <" . $email_to . ">\r\n";
+      $raw_message .= "Bcc:" . $email_bcc . " <" . $email_bcc . ">\r\n";
+      $raw_message .= 'Subject: =?utf-8?B?' . base64_encode($email_subject) . "?=\r\n";
+
+      // Set the right MIME & Content type
+      $raw_message .= "MIME-Version: 1.0\r\n";
+      //$raw_message .= "Content-Type: text/html; charset=utf-8\r\n";
+      $raw_message .= "Content-Type: text/html; charset=iso-8859-1\r\n";
+      $raw_message .= 'Content-Transfer-Encoding: quoted-printable' . "\r\n\r\n";
+      $raw_message .= $body . "\r\n";
+
+      $mime = rtrim(strtr(base64_encode($raw_message), '+/', '-_'), '=');
+      $message = new Google_Service_Gmail_Message();
+      $message->setRaw($mime);
+
+      $service = new Google_Service_Gmail($client);
+
+
+      ////THIS NEED TO BE REMOVED/////
+      $email_from = 'me';/////////////
+      ////THIS NEED TO BE REMOVED/////
+
+
+      $res = $service->users_messages->send($email_from, $message);
+      return $res;
+    } else {
+      drupal_set_message('Google Client Error');
+      return FALSE;
+    }
+  } else {
+    return FALSE;
+  }
+}
+
+/**
+ * Implements hook_form to Send Email with Gmail API
+ * @param $form
+ * @param $form_state
+ * @param $node
+ * @return array
+ */
+function md_doctor_send_gmail_form($form, $form_state, $node) {
+  $form = array();
+
+  drupal_set_title(t('Send Email to !name', array('!name' => $node->title)));
+
+  $form['#email_to'] = $node->field_email_publicly_visible[LANGUAGE_NONE][0]['email'];
+
+  $form['#surgeon'] = $node->field_fullname[LANGUAGE_NONE][0];
+  $form['#surgeon_name'] = $form['#surgeon']['title']." ".$form['#surgeon']['given']." ".$form['#surgeon']['family'];
+  $form['first_name'] = array(
+    '#type' => 'textfield',
+    '#required' => TRUE,
+    '#size' => 20,
+    '#attributes' => array('placeholder' => t('First Name'))
+    );
+
+  $form['last_name'] = array(
+    '#type' => 'textfield',
+    '#required' => TRUE,
+    '#size' => 20,
+    '#attributes' => array('placeholder' => t('Last Name'))
+    );
+
+  $form['email'] = array(
+    '#type' => 'textfield',
+    '#required' => TRUE,
+    '#size' => 20,
+    '#attributes' => array('placeholder' => t('Enter Email'))
+    );
+
+  $form['phone'] = array(
+    '#type' => 'textfield',
+    '#size' => 20,
+    '#attributes' => array('placeholder' => t('Enter Phone'))
+    );
+
+  $form['notes'] = array(
+    '#type' => 'textarea',
+    '#size' => 20,
+    );
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Send')
+    );
+
+  return $form;
+}
+
+/**
+ * Submit for the Send Email form
+ * @param $form
+ * @param $form_state
+ */
+function md_doctor_send_gmail_form_submit(&$form, &$form_state) {
+  $values = $form_state['values'];
+
+  $account_id = 'md Endovenous Site';
+  $email_to = $form['#email_to'];
+
+  $email_bcc = variable_get('site_mail_bcc','md.endovenous@gmail.com');
+  $email_subject = t('Message from !name -- md site', array('!name' => $values['first_name'] . ' ' . $values['last_name']));
+  
+  $body = "<p>Hello, ".$form['#surgeon_name'].",\r\n</p>";
+  $body .= "<p>A contact request was made by the following user from site to enquire about your services.\r\n</p>";
+  $body .= "<p>Full name: ".$values['first_name']." ".$values['last_name']."\r\n</p>";
+  if (!empty($values['phone'])) {
+    $body .= "<p>Phone: ".$values['phone']."\r\n</p>";
+  }
+  if (!empty($values['email'])) {
+    $email_from = $values['email'];
+    $body .= "<p>Email: ".$values['email']."\r\n</p>";
+  }
+  if (!empty($values['notes'])) {
+    $body .= "<p>Notes: ".$values['notes']."\r\n</p>";
+  }
+
+  $result = md_doctor_send_gmail($account_id, $email_from, $email_to, $email_bcc, $email_subject, $body);
+
+  if ($result) {
+    drupal_set_message('Your e-mail has been successfully sent to '.$form['#surgeon_name']);
+  } else {
+    drupal_set_message('Something went wrong. please contact us at '.$form['#email_to']);
+
+  }
+}
+
+/**
+ * @return array|mixed
+ */
+function md_doctor_search_doctor_form() {
+    $view = views_get_view('find_a_doctor');
+    $display_id = 'page'; // Display: page/block
+    $view->set_display($display_id);
+    $view->init_handlers();
+    $form_state = array(
+        'view' => $view,
+        'display' => $view->display_handler->display,
+        'exposed_form_plugin' => $view->display_handler->get_plugin('exposed_form'),
+        'method' => 'get',
+        'rerender' => TRUE,
+        'no_redirect' => TRUE,
+        'always_process' => TRUE, // This is important for handle the form status.
+    );
+
+    $form = drupal_build_form('views_exposed_form', $form_state);
+    $form['zip']['#prefix'] = '<div class="col-lg-3 col-lg-offset-2 col-md-5 col-xs-6 no-padding form-item form-item-zip">';
+    return $form;
+}
+
+/**
+ * Implements hook_token_info().
+ */
+function md_doctor_token_info() {
+
+    // Add tokens.
+    $site['search_doctor_form'] = array(
+        'name' => t('Token Name'),
+        'description' => t('Token Description'),
+    );
+
+    return array(
+        'tokens' => array(
+            'site' => $site,
+        ),
+    );
+}
+
+/**
+ * Implements hook_tokens().
+ */
+function md_doctor_tokens($type, $tokens, array $data = array(), array $options = array()) {
+    $replacements = array();
+
+    if ($type == 'site') {
+        foreach ($tokens as $name => $original) {
+            switch ($name) {
+                case 'search_doctor_form':
+                    $search_doctor_form = md_doctor_search_doctor_form();
+                    $replacements[$original] = render($search_doctor_form);
+                    break;
+            }
+        }
+    }
+
+    // Return the replacements.
+    return $replacements;
+}
